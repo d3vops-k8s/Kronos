@@ -1,18 +1,28 @@
 #include <iostream>
-#include "metric.h"
+#include <vector>
+#include "parser.h"
 
 int main() {
-    MetricPoint point;
+    std::vector<std::string> test_lines = {
+        "node_cpu_seconds_total 1245.67",
+        "# HELP node_cpu_seconds_total Total CPU time",
+        "node_memory_Active_bytes 4194304000 17172000000",
+        "broken_metrics_without_value"
+    };
 
-    point.name = "node_cpu_seconds_total";
-    point.value = 1245.67;
-    point.timestamp = 1717200000;
-    
+    std::cout << "--- Testing Kronos Parser ---" << '\n';
 
-    std::cout << "--- Kronos Metrics Point Test ---" << '\n';
-    std::cout << "Name:        " << point.name << '\n';
-    std::cout << "Value:       " << point.value << '\n';
-    std::cout << "Timestamp:   " << point.timestamp << '\n';
+    for (const std::string& line : test_lines) {
+        auto result = parse_line(line);
+
+        if (result.has_value()) {
+            std::cout << "[OK] Parsed: " << result->name
+                      << " = " << result->value
+                      << " (timestamp: " << result->timestamp << ")" << '\n';
+        } else {
+            std::cout << "[SKIP/ERROR] Ignored line: " << line << '\n';
+        }
+    }
 
     return 0;
 }
