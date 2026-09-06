@@ -1,0 +1,9 @@
+# HELP node_cpu_seconds_total Seconds the CPUs spent in each mode.
+# TYPE node_cpu_seconds_total counter
+
+node_cpu_seconds_total 1245.67
+node_memory_MemTotal_bytes 16777216000 1717200000
+node_network_receive_bytes_total 9823412
+
+invalid_metric_line_without_value
+node_disk_read_bytes_total 450123.89 1717200050

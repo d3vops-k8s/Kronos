@@ -1,28 +1,55 @@
 #include <iostream>
+#include <fstream>
 #include <vector>
+#include <string>
+#include "metric.h"
 #include "parser.h"
 
 int main() {
-    std::vector<std::string> test_lines = {
-        "node_cpu_seconds_total 1245.67",
-        "# HELP node_cpu_seconds_total Total CPU time",
-        "node_memory_Active_bytes 4194304000 17172000000",
-        "broken_metrics_without_value"
-    };
+    const std::string file_path = "data/metrics.txt";
 
-    std::cout << "--- Testing Kronos Parser ---" << '\n';
+    std::ifstream file(file_path);
 
-    for (const std::string& line : test_lines) {
+    if (!file.is_open()) {
+        std::cerr << "[ERROR] Could not open file: " << file_path << '\n';
+        return 1;
+    }
+
+    std::cout << "--- Kronos Metrics File Reader ---" << '\n';
+    std::cout << "Reading from: " << file_path << "\n\n";
+
+    std::vector<MetricPoint> parsed_metrics;
+    std::string line;
+    int total_lines = 0;
+    int skipped_lines = 0;
+
+    while (std::getline(file, line)) {
+        total_lines++;
+
         auto result = parse_line(line);
 
         if (result.has_value()) {
-            std::cout << "[OK] Parsed: " << result->name
-                      << " = " << result->value
-                      << " (timestamp: " << result->timestamp << ")" << '\n';
+            parsed_metrics.push_back(*result);
         } else {
-            std::cout << "[SKIP/ERROR] Ignored line: " << line << '\n';
+            skipped_lines++;
         }
     }
+
+    std::cout << "Successfully parsed metrics:" << '\n';
+    for (const auto& metric : parsed_metrics) {
+        std::cout << "   -> " << metric.name;
+        std::cout << "    = " << metric.value;
+
+        if (metric.timestamp != 0) {
+            std::cout << " [ts: " << metric.timestamp << "]";
+        }
+        std::cout << '\n';
+    }
+
+    std::cout << "\n--- Summary ---" << '\n';
+    std::cout << "Total lines read: " << total_lines << '\n';
+    std::cout << "Valid metrcis:    " << parsed_metrics.size() << '\n';
+    std::cout << "Skipped/Comments: " << skipped_lines << '\n';
 
     return 0;
 }
