@@ -9,6 +9,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_executable(kronos
     src/main.cpp
     src/parser.cpp
+    src/ring_buffer.cpp
 )
 
 target_include_directories(kronos PRIVATE

@@ -1,55 +1,34 @@
 #include <iostream>
-#include <fstream>
-#include <vector>
-#include <string>
 #include "metric.h"
-#include "parser.h"
+#include "ring_buffer.h"
 
 int main() {
-    const std::string file_path = "data/metrics.txt";
+    std::cout << "--- Testing Kronos RingBuffer ---" << "\n\n";
 
-    std::ifstream file(file_path);
+    const std::size_t capacity = 3;
+    RingBuffer ring(capacity);
 
-    if (!file.is_open()) {
-        std::cerr << "[ERROR] Could not open file: " << file_path << '\n';
-        return 1;
+    std::cout << "Initial state: size = " << ring.size() 
+              << ", capacity = " << ring.capacity() 
+              << ", is_empty = " << (ring.empty() ? "true" : "false") << "\n\n";
+
+    std::cout << "Pushing: 10.0, 20.0, 30.0..." << '\n';
+    ring.push({"node_cpu_seconds_total", 10.0, 1001});
+    ring.push({"node_cpu_seconds_total", 20.0, 1002});
+    ring.push({"node_cpu_seconds_total", 30.0, 1003});
+
+    std::cout << "Current size: " << ring.size() << " / " << ring.capacity() << '\n';
+    if (auto latest = ring.get_latest()) {
+        std::cout << "Latest metric: " << latest->name << " = " << latest->value << '\n';
     }
 
-    std::cout << "--- Kronos Metrics File Reader ---" << '\n';
-    std::cout << "Reading from: " << file_path << "\n\n";
+    std::cout << "\nPushing 4th point: 40.0 (buffer is full!)..." << '\n';
+    ring.push({"node_cpu_seconds_total", 40.0, 1004});
 
-    std::vector<MetricPoint> parsed_metrics;
-    std::string line;
-    int total_lines = 0;
-    int skipped_lines = 0;
-
-    while (std::getline(file, line)) {
-        total_lines++;
-
-        auto result = parse_line(line);
-
-        if (result.has_value()) {
-            parsed_metrics.push_back(*result);
-        } else {
-            skipped_lines++;
-        }
+    std::cout << "Size after overflow: " << ring.size() << " / " << ring.capacity() << '\n';
+    if (auto latest = ring.get_latest()) {
+        std::cout << "Latest metric now: " << latest->name << " = " << latest->value << '\n';
     }
-
-    std::cout << "Successfully parsed metrics:" << '\n';
-    for (const auto& metric : parsed_metrics) {
-        std::cout << "   -> " << metric.name;
-        std::cout << "    = " << metric.value;
-
-        if (metric.timestamp != 0) {
-            std::cout << " [ts: " << metric.timestamp << "]";
-        }
-        std::cout << '\n';
-    }
-
-    std::cout << "\n--- Summary ---" << '\n';
-    std::cout << "Total lines read: " << total_lines << '\n';
-    std::cout << "Valid metrcis:    " << parsed_metrics.size() << '\n';
-    std::cout << "Skipped/Comments: " << skipped_lines << '\n';
 
     return 0;
 }
