@@ -1,33 +1,58 @@
 #include <iostream>
-#include "metric.h"
-#include "ring_buffer.h"
+#include <fstream>
+#include <string>
+#include "parser.h"
+#include "storage.h"
 
 int main() {
-    std::cout << "--- Testing Kronos RingBuffer ---" << "\n\n";
+    const std::string file_path = "data/metrics.txt";
+    std::ifstream file(file_path);
 
-    const std::size_t capacity = 3;
-    RingBuffer ring(capacity);
-
-    std::cout << "Initial state: size = " << ring.size() 
-              << ", capacity = " << ring.capacity() 
-              << ", is_empty = " << (ring.empty() ? "true" : "false") << "\n\n";
-
-    std::cout << "Pushing: 10.0, 20.0, 30.0..." << '\n';
-    ring.push({"node_cpu_seconds_total", 10.0, 1001});
-    ring.push({"node_cpu_seconds_total", 20.0, 1002});
-    ring.push({"node_cpu_seconds_total", 30.0, 1003});
-
-    std::cout << "Current size: " << ring.size() << " / " << ring.capacity() << '\n';
-    if (auto latest = ring.get_latest()) {
-        std::cout << "Latest metric: " << latest->name << " = " << latest->value << '\n';
+    if (!file.is_open()) {
+        std::cerr << "[ERROR] Could not open file: " << file_path << '\n';
+        return 1;
     }
 
-    std::cout << "\nPushing 4th point: 40.0 (buffer is full!)..." << '\n';
-    ring.push({"node_cpu_seconds_total", 40.0, 1004});
+    std::cout << "=== Kronos Time-Series In-Memory Engine ===" << "\n\n";
+    std::cout << "Loading metrics from: " << file_path << "...\n";
 
-    std::cout << "Size after overflow: " << ring.size() << " / " << ring.capacity() << '\n';
-    if (auto latest = ring.get_latest()) {
-        std::cout << "Latest metric now: " << latest->name << " = " << latest->value << '\n';
+    InMemoryStorage storage(1000);
+
+    std::string line;
+    int ingested_count = 0;
+
+    while (std::getline(file, line)) {
+        auto point = parse_line(line);
+        if (point.has_value()) {
+            storage.insert(*point);
+            ingested_count++;
+        }
+    }
+
+    std::cout << "Ingestion complete!\n";
+    std::cout << "Total points ingested:   " << ingested_count << '\n';
+    std::cout << "Unique metrics tracked:  " << storage.metric_count() << "\n\n";
+
+    std::cout << "--- Querying Metrics by Name ---" << '\n';
+
+    if (auto cpu = storage.get_latest("node_cpu_seconds_total")) {
+        std::cout << "[FOUND] " << cpu->name << " = " << cpu->value 
+                  << " (timestamp: " << cpu->timestamp << ")" << '\n';
+    } else {
+        std::cout << "[NOT FOUND] node_cpu_seconds_total" << '\n';
+    }
+
+    if (auto mem = storage.get_latest("node_memory_MemTotal_bytes")) {
+        std::cout << "[FOUND] " << mem->name << " = " << mem->value 
+                  << " (timestamp: " << mem->timestamp << ")" << '\n';
+    } else {
+        std::cout << "[NOT FOUND] node_memory_MemTotal_bytes" << '\n';
+    }
+
+    if (auto fake = storage.get_latest("non_existent_metric")) {
+        std::cout << "[FOUND] " << fake->name << " = " << fake->value << '\n';
+    } else {
+        std::cout << "[SAFE]  non_existent_metric -> Correctly reported as NOT FOUND!" << '\n';
     }
 
     return 0;
