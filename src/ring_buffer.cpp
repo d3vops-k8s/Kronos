@@ -1,15 +1,12 @@
 #include "ring_buffer.h"
-#include "metric.h"
-#include <cstddef>
 
 RingBuffer::RingBuffer(std::size_t capacity)
-    : capacity_(capacity) {
+    : capacity_(capacity == 0 ? 1 : capacity) {
     buffer_.resize(capacity_);
-    }
+}
 
 void RingBuffer::push(const MetricPoint& point) {
     buffer_[head_] = point;
-
     head_ = (head_ + 1) % capacity_;
 
     if (count_ < capacity_) {
@@ -42,9 +39,12 @@ std::optional<double> RingBuffer::average() const {
     if (empty()) {
         return std::nullopt;
     }
+
     double sum = 0.0;
+    std::size_t start = (count_ < capacity_) ? 0 : head_;
     for (std::size_t i = 0; i < count_; ++i) {
-        sum += buffer_[i].value;
+        sum += buffer_[(start + i) % capacity_].value;
     }
+
     return sum / static_cast<double>(count_);
 }
