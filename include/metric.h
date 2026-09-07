@@ -9,5 +9,5 @@ struct MetricPoint {
     double value = 0.0;
     std::int64_t timestamp = 0;
 
-    auto operator<=>(const MetricPoint&) const = default;
+    std::partial_ordering operator<=>(const MetricPoint&) const = default;
 };
