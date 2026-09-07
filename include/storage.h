@@ -18,6 +18,8 @@ public:
 
     std::size_t metric_count() const;
 
+    std::optional<double> get_average(const std::string& metric_name) const;
+
     bool has_metric(const std::string& metric_name) const;
 
 private:

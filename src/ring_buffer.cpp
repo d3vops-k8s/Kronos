@@ -37,3 +37,14 @@ std::size_t RingBuffer::capacity() const {
 bool RingBuffer::empty() const {
     return count_ == 0;
 }
+
+std::optional<double> RingBuffer::average() const {
+    if (empty()) {
+        return std::nullopt;
+    }
+    double sum = 0.0;
+    for (std::size_t i = 0; i < count_; ++i) {
+        sum += buffer_[i].value;
+    }
+    return sum / static_cast<double>(count_);
+}

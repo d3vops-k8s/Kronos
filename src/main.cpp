@@ -4,56 +4,45 @@
 #include "parser.h"
 #include "storage.h"
 
+// Вспомогательная функция: красиво распечатать статус метрики
+void print_metric_info(const InMemoryStorage& storage, const std::string& name) {
+    auto latest = storage.get_latest(name);
+    auto avg = storage.get_average(name);
+
+    if (latest && avg) {
+        std::cout << "[METRIC] " << name << '\n'
+                  << "         Latest:  " << latest->value << '\n'
+                  << "         Average: " << *avg << '\n';
+    } else {
+        std::cout << "[WARN]   " << name << " -> Not found!" << '\n';
+    }
+}
+
 int main() {
-    const std::string file_path = "data/metrics.txt";
-    std::ifstream file(file_path);
+    std::cout << "=== Kronos TSDB Engine ===\n\n";
+
+    InMemoryStorage storage;
+    std::ifstream file("data/metrics.txt");
 
     if (!file.is_open()) {
-        std::cerr << "[ERROR] Could not open file: " << file_path << '\n';
+        std::cerr << "Error opening data/metrics.txt\n";
         return 1;
     }
 
-    std::cout << "=== Kronos Time-Series In-Memory Engine ===" << "\n\n";
-    std::cout << "Loading metrics from: " << file_path << "...\n";
-
-    InMemoryStorage storage(1000);
-
+    // Загрузка файла в память
     std::string line;
-    int ingested_count = 0;
-
     while (std::getline(file, line)) {
-        auto point = parse_line(line);
-        if (point.has_value()) {
+        if (auto point = parse_line(line)) {
             storage.insert(*point);
-            ingested_count++;
         }
     }
 
-    std::cout << "Ingestion complete!\n";
-    std::cout << "Total points ingested:   " << ingested_count << '\n';
-    std::cout << "Unique metrics tracked:  " << storage.metric_count() << "\n\n";
+    std::cout << "Tracked metrics: " << storage.metric_count() << "\n\n";
 
-    std::cout << "--- Querying Metrics by Name ---" << '\n';
-
-    if (auto cpu = storage.get_latest("node_cpu_seconds_total")) {
-        std::cout << "[FOUND] " << cpu->name << " = " << cpu->value 
-                  << " (timestamp: " << cpu->timestamp << ")" << '\n';
-    } else {
-        std::cout << "[NOT FOUND] node_cpu_seconds_total" << '\n';
-    }
-
-    if (auto mem = storage.get_latest("node_memory_MemTotal_bytes")) {
-        std::cout << "[FOUND] " << mem->name << " = " << mem->value 
-                  << " (timestamp: " << mem->timestamp << ")" << '\n';
-    } else {
-        std::cout << "[NOT FOUND] node_memory_MemTotal_bytes" << '\n';
-    }
-
-    if (auto fake = storage.get_latest("non_existent_metric")) {
-        std::cout << "[FOUND] " << fake->name << " = " << fake->value << '\n';
-    } else {
-        std::cout << "[SAFE]  non_existent_metric -> Correctly reported as NOT FOUND!" << '\n';
-    }
+    // Опрос метрик (проверяем последнее значение и среднее)
+    print_metric_info(storage, "node_cpu_seconds_total");
+    print_metric_info(storage, "node_memory_MemTotal_bytes");
+    print_metric_info(storage, "non_existent_metric");
 
     return 0;
 }

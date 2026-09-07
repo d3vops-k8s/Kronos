@@ -12,11 +12,12 @@ public:
     void push(const MetricPoint& point);
 
     std::optional<MetricPoint> get_latest() const;
-
+    std::optional<double> average() const;
+    
     std::size_t size() const;
     std::size_t capacity() const;
     bool empty() const;
-
+    
 private:
     std::vector<MetricPoint> buffer_;
     std::size_t capacity_;

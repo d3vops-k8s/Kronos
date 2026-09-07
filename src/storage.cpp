@@ -32,3 +32,11 @@ std::size_t InMemoryStorage::metric_count() const {
 bool InMemoryStorage::has_metric(const std::string& metric_name) const {
     return storage_.contains(metric_name);
 }
+
+std::optional<double> InMemoryStorage::get_average(const std::string& metric_name) const {
+    auto it = storage_.find(metric_name);
+    if (it == storage_.end()) {
+        return std::nullopt;
+    }
+    return it->second->average();
+}
