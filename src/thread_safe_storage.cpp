@@ -1,5 +1,5 @@
 #include "thread_safe_storage.h"
-#include <mutex>
+#include <mutex>  // std::unique_lock
 
 ThreadSafeStorage::ThreadSafeStorage(std::size_t default_capacity)
     : storage_(default_capacity) {}
@@ -30,6 +30,8 @@ bool ThreadSafeStorage::has_metric(const std::string& metric_name) const {
 }
 
 std::vector<std::string> ThreadSafeStorage::metric_names() const {
+    // Lock is released as soon as the vector copy is constructed.
+    // Callers receive a private copy and access it without holding the lock.
     std::shared_lock<std::shared_mutex> lock(mutex_);
     return storage_.metric_names();
 }
