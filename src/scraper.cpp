@@ -1,7 +1,7 @@
 #include "scraper.h"
 #include "parser.h"
 
-#include <httplib.h>  // cpp-httplib: header-only HTTP/1.1 клиент и сервер
+#include <httplib.h>
 #include <iostream>
 #include <format>
 #include <sstream>
@@ -10,78 +10,64 @@ Scraper::Scraper(ThreadSafeStorage& storage, ScrapeConfig config)
     : storage_(storage), config_(std::move(config)) {}
 
 void Scraper::start() {
-    // std::jthread автоматически передаёт std::stop_token первым аргументом лямбды.
-    // Нам не нужно вручную создавать stop_source — jthread делает это внутри.
+    // std::jthread forwards a stop_token as the first lambda argument automatically.
     thread_ = std::jthread([this](std::stop_token stop) {
         run(stop);
     });
 }
 
 void Scraper::stop() {
-    // Кооперативный сигнал остановки — аналог SIGTERM в Unix.
-    // Поток сам проверяет stop.stop_requested() и завершается корректно.
-    // В отличие от pthread_kill() или TerminateThread() — никакой гонки за ресурсы!
     thread_.request_stop();
 }
 
 void Scraper::run(std::stop_token stop) {
-    std::cout << std::format("[Scraper] Started → target: {}:{}{}, interval: {}s\n",
+    std::cout << std::format("[Scraper] started → {}:{}{} every {}s\n",
         config_.host, config_.port, config_.path, config_.interval.count());
 
     while (!stop.stop_requested()) {
         scrape_once();
 
-        // ⚠️ Антипаттерн (НЕ так):
-        //     std::this_thread::sleep_for(config_.interval);
-        // При shutdown поток будет спать всё время интервала, игнорируя сигнал остановки.
-        //
-        // ✅ Правильно: Прерываемое ожидание — дробим сон на кусочки по 100ms.
-        // Аналог: Kubernetes terminationGracePeriodSeconds — даём поду время на завершение,
-        // но проверяем готовность каждые 100ms.
+        // Interruptible wait: sleep in 100 ms increments so a stop request is
+        // honoured promptly rather than after the full scrape interval.
         auto deadline = std::chrono::steady_clock::now() + config_.interval;
         while (!stop.stop_requested() && std::chrono::steady_clock::now() < deadline) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
 
-    std::cout << "[Scraper] Stopped gracefully.\n";
+    std::cout << "[Scraper] stopped\n";
 }
 
 void Scraper::scrape_once() {
-    // httplib::Client — аналог curl в C++.
-    // Создаётся дёшево (нет постоянного соединения, как у curl --keepalive).
     httplib::Client client(config_.host, config_.port);
-    client.set_connection_timeout(3);  // 3 секунды — стандартный продакшн таймаут
+    client.set_connection_timeout(3);
 
     auto result = client.Get(config_.path);
-
     if (!result) {
-        // result.error() возвращает enum httplib::Error: Connection, Timeout, и т.д.
-        std::cerr << std::format("[Scraper] ❌ Connection failed: {} → {}:{}{}\n",
+        std::cerr << std::format("[Scraper] connection error: {} ({}:{}{})\n",
             httplib::to_string(result.error()),
             config_.host, config_.port, config_.path);
         return;
     }
 
     if (result->status != 200) {
-        std::cerr << std::format("[Scraper] ❌ HTTP {}: {}:{}{}\n",
+        std::cerr << std::format("[Scraper] HTTP {} from {}:{}{}\n",
             result->status, config_.host, config_.port, config_.path);
         return;
     }
 
-    // Парсим тело ответа построчно — наш Parser уже умеет это делать!
-    // std::istringstream разбивает строку на строки как cin, но из памяти (не с диска).
+    // Parse the response body line by line and ingest valid points into storage.
     std::istringstream stream(result->body);
     std::string line;
-    int parsed_count = 0;
+    int count = 0;
 
     while (std::getline(stream, line)) {
         if (auto point = parse_line(line)) {
-            storage_.insert(*point);  // ThreadSafeStorage: unique_lock внутри
-            ++parsed_count;
+            storage_.insert(*point);
+            ++count;
         }
     }
 
-    std::cout << std::format("[Scraper] ✅ Scraped {} metrics from {}:{}{}\n",
-        parsed_count, config_.host, config_.port, config_.path);
+    std::cout << std::format("[Scraper] scraped {} metrics from {}:{}{}\n",
+        count, config_.host, config_.port, config_.path);
 }

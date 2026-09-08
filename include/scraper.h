@@ -5,47 +5,41 @@
 #include <thread>
 #include "thread_safe_storage.h"
 
-// Конфигурация одного scrape-таргета.
-// Аналог секции scrape_configs в prometheus.yml:
-//   - job_name: 'node'
-//     static_configs:
-//       - targets: ['localhost:9100']
-//     scrape_interval: 15s
+// Configuration for a single scrape target, equivalent to a Prometheus scrape_config entry.
 struct ScrapeConfig {
-    std::string host;                   // e.g. "localhost"
-    int         port;                   // e.g. 9100
-    std::string path{"/metrics"};       // e.g. "/metrics"
-    std::chrono::seconds interval{15};  // Интервал скрейпа
+    std::string host;
+    int         port;
+    std::string path{"/metrics"};
+    std::chrono::seconds interval{15};
 };
 
-// Scraper — фоновый HTTP-скрейпер.
+// Background HTTP scraper.
 //
-// Жизненный цикл (аналог Kubernetes Pod):
-//   scraper.start()  → Pod переходит в Running
-//   scraper.stop()   → Pod получает SIGTERM (кооперативная остановка)
-//   ~Scraper()       → jthread::~jthread() делает request_stop() + join() автоматически (RAII)
+// Runs a scrape loop in a dedicated std::jthread. On each iteration, it issues
+// an HTTP GET request to the configured target, parses the OpenMetrics response,
+// and inserts valid data points into the shared ThreadSafeStorage.
 //
-// Гарантия: деструктор НИКОГДА не завершится, пока фоновый поток ещё работает.
-// Это полная противоположность std::thread, который при уничтожении без join() → std::terminate().
+// Shutdown is cooperative via std::stop_token. The sleep between scrapes is
+// implemented as a polling loop (100 ms ticks) so the thread responds to a
+// stop request within 100 ms rather than waiting out the full interval.
+//
+// std::jthread guarantees join() is called automatically on destruction even
+// if stop() is never called explicitly.
 class Scraper {
 public:
     explicit Scraper(ThreadSafeStorage& storage, ScrapeConfig config);
 
-    // Запускает фоновый jthread (неблокирующий вызов).
+    // Launches the background scrape thread. Non-blocking.
     void start();
 
-    // Запрашивает кооперативную остановку через stop_token (неблокирующий вызов).
-    // Поток проснётся за ≤100ms и завершится сам.
+    // Requests cooperative shutdown. Non-blocking; returns before the thread exits.
     void stop();
 
 private:
-    // Главный цикл потока — получает stop_token автоматически от jthread
     void run(std::stop_token stop);
-
-    // Выполняет один HTTP GET запрос и сохраняет распарсенные метрики в storage_
     void scrape_once();
 
-    ThreadSafeStorage& storage_;  // Ссылка (не копия!): один storage на всю программу
+    ThreadSafeStorage& storage_;
     ScrapeConfig       config_;
-    std::jthread       thread_;   // RAII: деструктор → request_stop() + join()
+    std::jthread       thread_;
 };

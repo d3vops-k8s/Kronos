@@ -4,12 +4,13 @@ project(Kronos LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)  # Required by clangd for IDE diagnostics.
 
-# ─── Зависимости ──────────────────────────────────────────────────────────────
-# cpp-httplib: header-only HTTP/1.1 клиент+сервер, ~400KB, без внешних DLL.
-# FetchContent автоматически скачивает и делает заголовки доступными через CMake target.
-# Аналог: pip install в Python, npm install в Node — но встроенный в систему сборки.
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+# cpp-httplib: header-only HTTP/1.1 client and server (~400 KB, no shared libs).
+# FetchContent downloads and makes the CMake target available at configure time.
 include(FetchContent)
 
 FetchContent_Declare(
@@ -17,13 +18,12 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
     GIT_TAG        v0.20.0
 )
-
-# HTTPLIB_REQUIRE_OPENSSL=OFF: используем plain HTTP (без TLS).
-# На production будет ON — для HTTPS скрейпинга.
-set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE BOOL "" FORCE)  # Plain HTTP only; enable for TLS.
 FetchContent_MakeAvailable(httplib)
 
-# ─── Основной бинарник ────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Main binary
+# ---------------------------------------------------------------------------
 add_executable(kronos
     src/main.cpp
     src/parser.cpp
@@ -36,7 +36,9 @@ add_executable(kronos
 target_include_directories(kronos PRIVATE include)
 target_link_libraries(kronos PRIVATE httplib::httplib)
 
-# ─── Mock Exporter (тестовый HTTP сервер) ─────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Mock exporter (integration test helper)
+# ---------------------------------------------------------------------------
 add_executable(mock_exporter
     tests/mock_exporter.cpp
 )
