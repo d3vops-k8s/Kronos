@@ -11,6 +11,7 @@ add_executable(kronos
     src/parser.cpp
     src/ring_buffer.cpp
     src/storage.cpp
+    src/thread_safe_storage.cpp
 )
 
 target_include_directories(kronos PRIVATE

@@ -34,3 +34,15 @@ std::optional<double> InMemoryStorage::get_average(const std::string& metric_nam
     }
     return it->second->average();
 }
+
+std::vector<std::string> InMemoryStorage::metric_names() const {
+  std::vector<std::string> names;
+  names.reserve(storage_.size());
+
+  for (const auto& [name, _] : storage_) {
+    names.push_back(name);
+  }
+
+  return names;
+}
+

@@ -20,6 +20,8 @@ public:
 
     std::optional<double> get_average(const std::string& metric_name) const;
 
+    std::vector<std::string> metric_names() const;
+
     bool has_metric(const std::string& metric_name) const;
 
 private:
