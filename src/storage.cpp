@@ -45,3 +45,11 @@ std::vector<std::string> InMemoryStorage::metric_names() const {
 std::size_t InMemoryStorage::metric_count() const {
     return storage_.size();
 }
+
+std::vector<MetricPoint> InMemoryStorage::get_points(const std::string& metric_name) const {
+    auto it = storage_.find(metric_name);
+    if (it == storage_.end()) {
+        return {};
+    }
+    return it->second->get_all();
+}

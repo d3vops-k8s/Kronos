@@ -1,67 +1,56 @@
-// Kronos TSDB — Sprint 3 integration test.
-//
-// Starts a Scraper that polls mock_exporter every 5 seconds and a Reporter
-// thread that prints a storage snapshot every 5 seconds for 20 seconds.
-//
-// Prerequisites:
-//   Start mock_exporter.exe in a separate terminal before running this binary.
-
 #include <iostream>
 #include <format>
-#include <thread>
 #include <chrono>
+#include <csignal>
 #include "thread_safe_storage.h"
 #include "scraper.h"
+#include "http_server.h"
 
 using namespace std::chrono_literals;
 
+// Global pointer for clean SIGINT / Ctrl+C handling
+HttpServer* g_server = nullptr;
+
+void signal_handler(int) {
+    std::cout << "\n[Kronos] Shutdown signal received, stopping server...\n";
+    if (g_server) {
+        g_server->stop();
+    }
+}
+
 int main() {
-    std::cout << "=== Kronos TSDB — Sprint 3 Integration Test ===\n\n";
+    std::signal(SIGINT, signal_handler);
+    std::signal(SIGTERM, signal_handler);
+
+    std::cout << "=== Kronos TSDB Daemon (C++23) ===\n\n";
 
     ThreadSafeStorage storage;
 
-    ScrapeConfig config{
+    // 1. Configure and start background Scraper (polls mock_exporter every 2 seconds)
+    ScrapeConfig scrape_config{
         .host     = "localhost",
         .port     = 9100,
         .path     = "/metrics",
-        .interval = 5s,
+        .interval = 2s
     };
 
-    Scraper scraper(storage, config);
+    Scraper scraper(storage, scrape_config);
     scraper.start();
 
-    std::cout << "Collecting for 20 seconds (requires mock_exporter.exe on :9100)...\n\n";
+    // 2. Configure and start embedded HTTP server on port 8080
+    HttpServer server(storage, 8080);
+    g_server = &server;
 
-    // Reporter thread: prints a storage snapshot every 5 seconds.
-    // Demonstrates concurrent reads alongside the scraper's writes.
-    {
-        std::jthread reporter([&storage](std::stop_token stop) {
-            int tick = 0;
-            while (!stop.stop_requested()) {
-                std::this_thread::sleep_for(5s);
-                if (stop.stop_requested()) break;
+    std::cout << "[Kronos] Scraper running in background -> target: http://localhost:9100/metrics\n";
+    std::cout << "[Kronos] Web UI live at http://localhost:8080\n";
+    std::cout << "[Kronos] Press Ctrl+C to stop daemon gracefully.\n\n";
 
-                std::cout << std::format("\n--- snapshot [tick {}] ---\n", ++tick);
-                std::cout << std::format("metrics tracked: {}\n", storage.metric_count());
+    // Blocks main thread while serving HTTP requests
+    server.start();
 
-                for (const auto& name : storage.metric_names()) {
-                    auto latest = storage.get_latest(name);
-                    auto avg    = storage.get_average(name);
-                    if (latest && avg) {
-                        std::cout << std::format("  {:45s}  latest={:>12.2f}  avg={:>12.2f}\n",
-                            name, latest->value, *avg);
-                    }
-                }
-            }
-        });
-
-        std::this_thread::sleep_for(20s);
-    } // reporter jthread destructor: request_stop() + join()
-
+    // Clean shutdown: RAII jthread in scraper stops automatically
     scraper.stop();
-
-    std::cout << "\n=== done ===\n";
-    std::cout << std::format("final metric count: {}\n", storage.metric_count());
+    std::cout << "[Kronos] Daemon stopped cleanly.\n";
 
     return 0;
 }

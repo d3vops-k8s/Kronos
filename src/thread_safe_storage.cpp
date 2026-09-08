@@ -35,3 +35,8 @@ std::vector<std::string> ThreadSafeStorage::metric_names() const {
     std::shared_lock<std::shared_mutex> lock(mutex_);
     return storage_.metric_names();
 }
+
+std::vector<MetricPoint> ThreadSafeStorage::get_points(const std::string& metric_name) const {
+    std::shared_lock<std::shared_mutex> lock(mutex_);
+    return storage_.get_points(metric_name);
+}

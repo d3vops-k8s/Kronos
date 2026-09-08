@@ -31,6 +31,10 @@ public:
     // Returns the arithmetic mean of all stored values, or nullopt if empty.
     // Iteration order is chronological (oldest to newest).
     std::optional<double> average() const;
+    
+
+    // Returns all stored data points in chronological order (oldest to newest).
+    std::vector<MetricPoint> get_all() const;
 
     std::size_t size()     const;  // Number of valid entries currently stored.
     std::size_t capacity() const;  // Maximum number of entries the buffer can hold.

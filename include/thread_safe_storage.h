@@ -28,6 +28,10 @@ public:
     std::optional<MetricPoint> get_latest(const std::string& metric_name) const;
     std::optional<double>      get_average(const std::string& metric_name) const;
     std::size_t                metric_count() const;
+
+     // Returns all points for a metric under shared_lock (thread-safe read).
+    std::vector<MetricPoint> get_points(const std::string& metric_name) const;
+    
     bool                       has_metric(const std::string& metric_name) const;
 
     // Returns a snapshot copy of metric names. The lock is held only during

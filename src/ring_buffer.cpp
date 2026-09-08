@@ -47,3 +47,17 @@ std::optional<double> RingBuffer::average() const {
 
     return sum / static_cast<double>(count_);
 }
+
+std::vector<MetricPoint> RingBuffer::get_all() const {
+    if (empty()) {
+        return {};
+    }
+    std::vector<MetricPoint> points;
+    points.reserve(count_);  // Single allocation for the exact number of elements.
+    // If the buffer is full, the oldest element is at head_; otherwise it is at 0.
+    std::size_t start = (count_ < capacity_) ? 0 : head_;
+    for (std::size_t i = 0; i < count_; ++i) {
+        points.push_back(buffer_[(start + i) % capacity_]);
+    }
+    return points;
+}
