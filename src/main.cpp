@@ -1,76 +1,80 @@
+// main.cpp — Интеграционный тест Спринта 3: Scraper + ThreadSafeStorage
+//
+// Запуск:
+//   Терминал 1: .\build\mock_exporter.exe
+//   Терминал 2: .\build\kronos.exe
+
 #include <iostream>
-#include <fstream>
 #include <format>
-#include <string>
 #include <thread>
-#include "parser.h"
+#include <chrono>
 #include "thread_safe_storage.h"
+#include "scraper.h"
+
+using namespace std::chrono_literals;
 
 int main() {
-    std::cout << std::format("=== Kronos TSDB Engine — Multithreaded Test (C++23) ===\n\n");
+    std::cout << std::format("=== Kronos TSDB Engine — Sprint 3 Integration Test (C++23) ===\n\n");
 
-
+    // Единственное хранилище для всей программы.
+    // Скрапер будет писать в него через unique_lock,
+    // репортер — читать через shared_lock. Никаких гонок!
     ThreadSafeStorage storage;
 
-    std::ifstream file("data/metrics.txt");
-    if (!file.is_open()) {
-        std::cerr << std::format("Error opening data/metrics.txt\n");
-        return 1;
-    }
+    // Конфигурация скрапера (аналог scrape_configs в prometheus.yml)
+    ScrapeConfig config{
+        .host     = "localhost",
+        .port     = 9100,
+        .path     = "/metrics",
+        .interval = 5s   // Каждые 5 секунд — для наглядности теста
+    };
 
-    std::string line;
-    while (std::getline(file, line)) {
-        if (auto point = parse_line(line)) {
-            storage.insert(*point);
-        }
-    }
+    // Запускаем фоновый поток-скрапер
+    Scraper scraper(storage, config);
+    scraper.start();
 
+    std::cout << "Scraper started. Collecting for 20 seconds (4 cycles × 5s)...\n";
+    std::cout << "Make sure mock_exporter.exe is running in another terminal!\n\n";
 
-    std::cout << std::format("Initial tracked metrics ({}):\n", storage.metric_count());
-    for (const auto& name : storage.metric_names()) {
-        std::cout << std::format("  -> {}\n", name);
-    }
-    std::cout << "\nStarting concurrent stress-test (Writer + Reader)...\n";
-
-    constexpr int iterations = 100'000; 
-
-    // RAII Scope: деструкторы jthread автоматически вызовут .join()
-    // при закрытии фигурной скобки — даже если внутри вылетит исключение.
-    // Это золотой стандарт C++23: никакого ручного .join() !
+    // Репортер — ещё один фоновый поток, который каждые 5 секунд
+    // печатает снимок состояния хранилища (snapshot).
+    // Демонстрируем Multiple Readers: reader и scraper работают параллельно без блокировок!
     {
-        std::jthread writer([&storage]() {
-            for (int i = 0; i < iterations; ++i) {
-                MetricPoint point{
-                    .name = "node_cpu_seconds_total",
-                    .value = 100.0 + (i % 50),
-                    .timestamp = 1717200000 + i
-                };
-                storage.insert(point);
+        std::jthread reporter([&storage](std::stop_token stop) {
+            int tick = 0;
+            while (!stop.stop_requested()) {
+                std::this_thread::sleep_for(5s);
+                if (stop.stop_requested()) break;
+
+                ++tick;
+                std::cout << std::format("\n─── [Tick {}] Storage Snapshot ───────────────────\n", tick);
+                std::cout << std::format("Active metrics: {}\n", storage.metric_count());
+
+                for (const auto& name : storage.metric_names()) {
+                    auto latest = storage.get_latest(name);
+                    auto avg    = storage.get_average(name);
+                    if (latest && avg) {
+                        std::cout << std::format("  {:45s} latest={:>12.2f}  avg={:>12.2f}\n",
+                            name, latest->value, *avg);
+                    }
+                }
             }
         });
 
-        std::jthread reader([&storage]() {
-            for (int i = 0; i < iterations; ++i) {
-                auto latest = storage.get_latest("node_cpu_seconds_total");
-                auto avg = storage.get_average("node_cpu_seconds_total");
-                auto count = storage.metric_count();
-                (void)latest;
-                (void)avg;
-                (void)count;
-            }
-        });
+        // Главный поток спит 20 секунд пока идёт сбор данных
+        std::this_thread::sleep_for(20s);
 
-    } // <-- Здесь оба потока гарантированно завершились!
+    } // Деструктор reporter jthread: request_stop() + join() автоматически
 
-    std::cout << "\n=== Stress-test completed successfully! ===\n";
-    auto latest = storage.get_latest("node_cpu_seconds_total");
-    auto avg = storage.get_average("node_cpu_seconds_total");
-    if (latest && avg) {
-        std::cout << std::format("Metric: node_cpu_seconds_total\n");
-        std::cout << std::format("  Latest Value: {}\n", latest->value);
-        std::cout << std::format("  Average (RingBuffer): {:.2f}\n", *avg);
+    // Останавливаем скрапер
+    scraper.stop();
+
+    std::cout << "\n=== Sprint 3 complete! ===\n";
+    std::cout << std::format("Final active metrics: {}\n", storage.metric_count());
+    for (const auto& name : storage.metric_names()) {
+        auto avg = storage.get_average(name);
+        if (avg) std::cout << std::format("  {} → avg={:.2f}\n", name, *avg);
     }
-    std::cout << std::format("Total active metrics in storage: {}\n", storage.metric_count());
 
     return 0;
 }
