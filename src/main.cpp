@@ -1,6 +1,4 @@
 #include <iostream>
-#include <format>
-#include <chrono>
 #include <csignal>
 #include "thread_safe_storage.h"
 #include "scraper.h"
