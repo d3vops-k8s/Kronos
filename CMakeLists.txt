@@ -32,6 +32,7 @@ add_executable(kronos
     src/thread_safe_storage.cpp
     src/scraper.cpp
     src/http_server.cpp
+    src/wal.cpp
 )
 
 target_include_directories(kronos PRIVATE include)

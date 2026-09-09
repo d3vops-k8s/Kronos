@@ -1,12 +1,14 @@
 #include <iostream>
+#include <format>
 #include <csignal>
+#include <filesystem>
 #include "thread_safe_storage.h"
 #include "scraper.h"
 #include "http_server.h"
+#include "wal.h"
 
 using namespace std::chrono_literals;
 
-// Global pointer for clean SIGINT / Ctrl+C handling
 HttpServer* g_server = nullptr;
 
 void signal_handler(int) {
@@ -20,11 +22,28 @@ int main() {
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    std::cout << "=== Kronos TSDB Daemon (C++23) ===\n\n";
+    std::cout << "=== Kronos TSDB Engine with Write-Ahead Log (C++23) ===\n\n";
 
     ThreadSafeStorage storage;
+    const std::filesystem::path wal_path = "data/wal/kronos.wal";
 
-    // 1. Configure and start background Scraper (polls mock_exporter every 2 seconds)
+    // ─── 1. Recovery Phase (Crash Resilience) ──────────────────────────────────
+    std::cout << "[WAL] Checking for existing WAL log at: " << wal_path << " ...\n";
+    wal::WALReader reader(wal_path);
+    std::size_t recovered = reader.recover(storage);
+
+    if (recovered > 0) {
+        std::cout << std::format("[WAL] ✅ RECOVERY COMPLETE: Restored {} points from disk!\n", recovered);
+        std::cout << std::format("[WAL] Active metrics in storage: {}\n\n", storage.metric_count());
+    } else {
+        std::cout << "[WAL] ℹ️ Clean start (no previous log found).\n\n";
+    }
+
+    // ─── 2. Attach WAL Writer for live incoming metrics ───────────────────────
+    wal::WALWriter writer(wal_path);
+    storage.set_wal(&writer);
+
+    // ─── 3. Start Scraper (polls mock_exporter on port 9100) ──────────────────
     ScrapeConfig scrape_config{
         .host     = "localhost",
         .port     = 9100,
@@ -35,19 +54,19 @@ int main() {
     Scraper scraper(storage, scrape_config);
     scraper.start();
 
-    // 2. Configure and start embedded HTTP server on port 8080
+    // ─── 4. Start HTTP Server (port 8080) ────────────────────────────────────
     HttpServer server(storage, 8080);
     g_server = &server;
 
-    std::cout << "[Kronos] Scraper running in background -> target: http://localhost:9100/metrics\n";
+    std::cout << "[Kronos] Scraper running -> target: http://localhost:9100/metrics\n";
     std::cout << "[Kronos] Web UI live at http://localhost:8080\n";
-    std::cout << "[Kronos] Press Ctrl+C to stop daemon gracefully.\n\n";
+    std::cout << "[Kronos] Press Ctrl+C to test graceful shutdown.\n\n";
 
-    // Blocks main thread while serving HTTP requests
     server.start();
 
-    // Clean shutdown: RAII jthread in scraper stops automatically
+    // ─── 5. Cleanup ──────────────────────────────────────────────────────────
     scraper.stop();
+    storage.set_wal(nullptr);
     std::cout << "[Kronos] Daemon stopped cleanly.\n";
 
     return 0;

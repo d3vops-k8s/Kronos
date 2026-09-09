@@ -1,14 +1,17 @@
 #include "thread_safe_storage.h"
 #include <mutex>  // std::unique_lock
+#include "wal.h"
 
 ThreadSafeStorage::ThreadSafeStorage(std::size_t default_capacity)
     : storage_(default_capacity) {}
 
 void ThreadSafeStorage::insert(const MetricPoint& point) {
+    if (wal_) {
+        wal_->append(point);
+    }
     std::unique_lock<std::shared_mutex> lock(mutex_);
-    storage_.insert(point);
+    storage_.insert(point);  
 }
-
 std::optional<MetricPoint> ThreadSafeStorage::get_latest(const std::string& metric_name) const {
     std::shared_lock<std::shared_mutex> lock(mutex_);
     return storage_.get_latest(metric_name);
@@ -39,4 +42,9 @@ std::vector<std::string> ThreadSafeStorage::metric_names() const {
 std::vector<MetricPoint> ThreadSafeStorage::get_points(const std::string& metric_name) const {
     std::shared_lock<std::shared_mutex> lock(mutex_);
     return storage_.get_points(metric_name);
+}
+
+void ThreadSafeStorage::set_wal(wal::WALWriter* wal) {
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+    wal_ = wal;
 }

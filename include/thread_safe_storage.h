@@ -17,12 +17,16 @@
 //
 // All locks are RAII-managed (std::shared_lock / std::unique_lock).
 // They are released automatically on scope exit, including during stack unwinding.
+namespace wal { class WALWriter; }
 class ThreadSafeStorage {
 public:
     explicit ThreadSafeStorage(std::size_t default_capacity = 1000);
 
     // Acquires an exclusive lock. Blocks until all active readers have released.
     void insert(const MetricPoint& point);
+
+    // Attaches a WAL writer. When set, every insert() is persisted to disk before RAM.
+    void set_wal(wal::WALWriter* wal);
 
     // Acquire shared locks. Multiple callers may execute these concurrently.
     std::optional<MetricPoint> get_latest(const std::string& metric_name) const;
@@ -44,4 +48,5 @@ private:
     // mutable: permits locking inside const member functions.
     // Logically the mutex is not part of the object's observable state.
     mutable std::shared_mutex mutex_;
+    wal::WALWriter* wal_ = nullptr;
 };
