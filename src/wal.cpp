@@ -4,6 +4,7 @@
 #include <iostream>
 #include <format>
 #include <vector>
+#include <cmath>
 
 namespace wal {
 
@@ -88,6 +89,12 @@ std::optional<MetricPoint> read_record(std::istream& in, std::uint16_t version) 
         return std::nullopt;
     }
 
+    // Sanity check: value must be finite
+    if (!std::isfinite(point.value)) {
+        std::cerr << "[WAL] Warning: Corrupted non-finite value encountered in record. Discarding.\n";
+        return std::nullopt;
+    }
+
     // 3. Read metric name length (2 bytes)
     std::uint16_t name_len = 0;
     in.read(reinterpret_cast<char*>(&name_len), sizeof(name_len));
@@ -95,11 +102,23 @@ std::optional<MetricPoint> read_record(std::istream& in, std::uint16_t version) 
         return std::nullopt;
     }
 
+    // Sanity check: metric name must be reasonable (1 to 256 bytes)
+    if (name_len == 0 || name_len > 256) {
+        std::cerr << std::format("[WAL] Warning: Corrupted metric name length: {}. Discarding.\n", name_len);
+        return std::nullopt;
+    }
+
     // 4. Read metric name characters
     point.name.resize(name_len);
-    if (name_len > 0) {
-        in.read(point.name.data(), name_len);
-        if (!in.good()) {
+    in.read(point.name.data(), name_len);
+    if (!in.good()) {
+        return std::nullopt;
+    }
+
+    // Sanity check: metric name must contain only valid printable characters
+    for (char c : point.name) {
+        if (static_cast<unsigned char>(c) < 32 || static_cast<unsigned char>(c) > 126) {
+            std::cerr << "[WAL] Warning: Corrupted metric name with non-printable characters. Discarding.\n";
             return std::nullopt;
         }
     }
@@ -142,11 +161,32 @@ WALWriter::WALWriter(const std::filesystem::path& path)
 
     bool file_exists = std::filesystem::exists(path_);
     bool is_empty    = !file_exists || (std::filesystem::file_size(path_) == 0);
+    bool need_header = is_empty;
 
-    file_.open(path_, std::ios::binary | std::ios::app);
-    if (file_.is_open() && is_empty) {
-        write_header(file_);
-        file_.flush();
+    if (file_exists && !is_empty) {
+        std::ifstream test(path_, std::ios::binary);
+        std::uint16_t existing_version = 0;
+        if (!validate_header(test, existing_version) || existing_version != VERSION) {
+            test.close();
+            // Existing WAL has a mismatched version or corrupt header.
+            // Safely archive the old file and start a fresh VERSION log.
+            std::error_code ec;
+            auto archive_path = path_;
+            archive_path += ".v1.bak";
+            std::filesystem::rename(path_, archive_path, ec);
+            std::cout << "[WAL] Archived older version WAL to: " << archive_path.string() << "\n";
+            need_header = true;
+        }
+    }
+
+    if (need_header) {
+        file_.open(path_, std::ios::binary | std::ios::out | std::ios::trunc);
+        if (file_.is_open()) {
+            write_header(file_);
+            file_.flush();
+        }
+    } else {
+        file_.open(path_, std::ios::binary | std::ios::app);
     }
 }
 

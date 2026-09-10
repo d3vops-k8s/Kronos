@@ -111,11 +111,26 @@ void HttpServer::handle_metrics_list(const httplib::Request&, httplib::Response&
     auto names = storage_.metric_names();
 
     std::string json = "[";
-    for (std::size_t i = 0; i < names.size(); ++i) {
-        json += std::format("\"{}\"", names[i]);
-        if (i + 1 < names.size()) {
+    bool first = true;
+    for (const auto& name : names) {
+        if (name.empty() || name.size() > 256) {
+            continue;
+        }
+        bool valid = true;
+        for (char c : name) {
+            if (static_cast<unsigned char>(c) < 32 || static_cast<unsigned char>(c) > 126 || c == '"' || c == '\\') {
+                valid = false;
+                break;
+            }
+        }
+        if (!valid) {
+            continue;
+        }
+        if (!first) {
             json += ",";
         }
+        first = false;
+        json += std::format("\"{}\"", name);
     }
     json += "]";
 
