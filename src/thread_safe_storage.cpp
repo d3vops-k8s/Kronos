@@ -12,6 +12,17 @@ void ThreadSafeStorage::insert(const MetricPoint& point) {
     std::unique_lock<std::shared_mutex> lock(mutex_);
     storage_.insert(point);  
 }
+
+void ThreadSafeStorage::insert_batch(std::span<const MetricPoint> points) {
+    if (points.empty()) {
+        return;
+    }
+    if (wal_) {
+        wal_->append_batch(points);
+    }
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+    storage_.insert_batch(points);
+}
 std::optional<MetricPoint> ThreadSafeStorage::get_latest(const std::string& metric_name) const {
     std::shared_lock<std::shared_mutex> lock(mutex_);
     return storage_.get_latest(metric_name);

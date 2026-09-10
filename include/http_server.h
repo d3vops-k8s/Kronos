@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <chrono>
 #include <httplib.h>
 #include "thread_safe_storage.h"
 
@@ -33,4 +34,5 @@ private:
     ThreadSafeStorage& storage_;
     httplib::Server    server_;
     std::uint16_t      port_;
+    std::chrono::steady_clock::time_point start_time_{std::chrono::steady_clock::now()};
 };

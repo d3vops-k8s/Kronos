@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <vector>
+#include <span>
 #include <cstddef>
 #include "metric.h"
 #include "ring_buffer.h"
@@ -28,6 +29,9 @@ public:
     // Creates a new RingBuffer for the metric on first insertion.
     // Complexity: O(1) amortized.
     void insert(const MetricPoint& point);
+
+    // Inserts a batch of data points into their respective RingBuffers.
+    void insert_batch(std::span<const MetricPoint> points);
 
     // Returns the most recent data point for the given metric, or nullopt if not found.
     std::optional<MetricPoint> get_latest(const std::string& metric_name) const;

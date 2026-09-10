@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <optional>
+#include <span>
 #include <cstddef>
 #include "metric.h"
 #include "storage.h"
@@ -24,6 +25,9 @@ public:
 
     // Acquires an exclusive lock. Blocks until all active readers have released.
     void insert(const MetricPoint& point);
+
+    // Acquires an exclusive lock once for the entire batch.
+    void insert_batch(std::span<const MetricPoint> points);
 
     // Attaches a WAL writer. When set, every insert() is persisted to disk before RAM.
     void set_wal(wal::WALWriter* wal);

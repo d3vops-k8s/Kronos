@@ -120,6 +120,25 @@ bool WALWriter::append(const MetricPoint& point) {
     return true;
 }
 
+bool WALWriter::append_batch(std::span<const MetricPoint> points) {
+    if (points.empty()) {
+        return true;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!file_.is_open()) {
+        return false;
+    }
+
+    for (const auto& point : points) {
+        if (!write_record(file_, point)) {
+            return false;
+        }
+    }
+
+    file_.flush(); // Ensure persistence to OS buffers once per batch
+    return true;
+}
+
 void WALWriter::flush() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (file_.is_open()) {

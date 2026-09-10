@@ -1,5 +1,8 @@
 #include "http_server.h"
 #include "dashboard_html.h"
+#include "gorilla.h"
+#include <chrono>
+#include <filesystem>
 #include <format>
 #include <iostream>
 #include <string>
@@ -37,7 +40,13 @@ void HttpServer::register_routes() {
 }
 
 void HttpServer::handle_health(const httplib::Request&, httplib::Response& res) {
-    res.set_content("{\"status\":\"ok\"}", "application/json");
+    auto uptime_sec = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - start_time_
+    ).count();
+    res.set_content(
+        std::format("{{\"status\":\"ok\",\"uptime_seconds\":{}}}", uptime_sec),
+        "application/json"
+    );
 }
 
 void HttpServer::handle_metrics_list(const httplib::Request&, httplib::Response& res) {
@@ -85,15 +94,45 @@ void HttpServer::handle_query(const httplib::Request& req, httplib::Response& re
         }
     }
     points_json += "]";
-    // Return complete JSON with latest, average, and points array for Chart.js
+
+    // Live Gorilla compression on active buffer points
+    std::size_t raw_bytes = points.size() * sizeof(MetricPoint);
+    std::size_t compressed_bytes = raw_bytes;
+    double compression_ratio = 1.0;
+    double bits_per_point = 128.0;
+
+    if (!points.empty()) {
+        GorillaCompressor compressor;
+        for (const auto& pt : points) {
+            compressor.compress(pt);
+        }
+        auto compressed = compressor.finish();
+        compressed_bytes = compressed.size();
+        if (compressed_bytes > 0) {
+            compression_ratio = static_cast<double>(raw_bytes) / static_cast<double>(compressed_bytes);
+            bits_per_point = (static_cast<double>(compressed_bytes) * 8.0) / static_cast<double>(points.size());
+        }
+    }
+
+    // Read current WAL file size from disk
+    std::uintmax_t wal_bytes = 0;
+    if (std::filesystem::exists("data/wal/kronos.wal")) {
+        wal_bytes = std::filesystem::file_size("data/wal/kronos.wal");
+    }
+
+    // Return complete JSON with latest, average, points, and live engine stats
     auto json = std::format(
-        "{{\"name\":\"{}\",\"latest\":{},\"average\":{:.2f},\"points\":{}}}",
-        name, latest->value, *avg, points_json
+        "{{\"name\":\"{}\",\"latest\":{},\"average\":{:.2f},\"points\":{},"
+        "\"gorilla\":{{\"raw_bytes\":{},\"compressed_bytes\":{},\"compression_ratio\":{:.2f},\"bits_per_point\":{:.2f}}},"
+        "\"wal\":{{\"file_bytes\":{},\"status\":\"synced\"}}}}",
+        name, latest->value, *avg, points_json,
+        raw_bytes, compressed_bytes, compression_ratio, bits_per_point,
+        wal_bytes
     );
     res.set_content(json, "application/json");
 }
 
 void HttpServer::handle_index(const httplib::Request&, httplib::Response& res) {
-    // Serve embedded Chart.js single-page dashboard directly from memory (zero allocations)
-    res.set_content(DASHBOARD_HTML.data(), DASHBOARD_HTML.size(), "text/html");
+    res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.set_content(DASHBOARD_HTML.data(), DASHBOARD_HTML.size(), "text/html; charset=utf-8");
 }

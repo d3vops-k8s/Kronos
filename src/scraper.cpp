@@ -59,15 +59,19 @@ void Scraper::scrape_once() {
     // Parse the response body line by line and ingest valid points into storage.
     std::istringstream stream(result->body);
     std::string line;
-    int count = 0;
+    std::vector<MetricPoint> batch;
+    batch.reserve(64);
 
     while (std::getline(stream, line)) {
         if (auto point = parse_line(line)) {
-            storage_.insert(*point);
-            ++count;
+            batch.push_back(std::move(*point));
         }
     }
 
+    if (!batch.empty()) {
+        storage_.insert_batch(batch);
+    }
+
     std::cout << std::format("[Scraper] scraped {} metrics from {}:{}{}\n",
-        count, config_.host, config_.port, config_.path);
+        batch.size(), config_.host, config_.port, config_.path);
 }

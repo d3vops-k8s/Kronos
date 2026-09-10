@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <mutex>
 #include <optional>
+#include <span>
 #include "metric.h"
 
 // Forward declaration
@@ -30,6 +31,9 @@ public:
 
     // Appends a metric point to the WAL file. Thread-safe.
     bool append(const MetricPoint& point);
+
+    // Appends a batch of metric points to the WAL with a single lock and flush. Thread-safe.
+    bool append_batch(std::span<const MetricPoint> points);
 
     // Flushes buffered bytes to the underlying OS page cache.
     void flush();

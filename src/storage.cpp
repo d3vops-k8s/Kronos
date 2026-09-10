@@ -13,6 +13,12 @@ void InMemoryStorage::insert(const MetricPoint& point) {
     it->second->push(point);
 }
 
+void InMemoryStorage::insert_batch(std::span<const MetricPoint> points) {
+    for (const auto& point : points) {
+        insert(point);
+    }
+}
+
 std::optional<MetricPoint> InMemoryStorage::get_latest(const std::string& metric_name) const {
     auto it = storage_.find(metric_name);
     if (it == storage_.end()) {
