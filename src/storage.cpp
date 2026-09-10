@@ -10,7 +10,7 @@ void InMemoryStorage::insert(const MetricPoint& point) {
     if (inserted) {
         it->second = std::make_unique<RingBuffer>(default_capacity_);
     }
-    it->second->push(point);
+    it->second->push(point.timestamp, point.value);
 }
 
 void InMemoryStorage::insert_batch(std::span<const MetricPoint> points) {
@@ -24,7 +24,11 @@ std::optional<MetricPoint> InMemoryStorage::get_latest(const std::string& metric
     if (it == storage_.end()) {
         return std::nullopt;
     }
-    return it->second->get_latest();
+    auto sample = it->second->get_latest();
+    if (!sample) {
+        return std::nullopt;
+    }
+    return MetricPoint{metric_name, sample->value, sample->timestamp};
 }
 
 std::optional<double> InMemoryStorage::get_average(const std::string& metric_name) const {
@@ -53,9 +57,24 @@ std::size_t InMemoryStorage::metric_count() const {
 }
 
 std::vector<MetricPoint> InMemoryStorage::get_points(const std::string& metric_name) const {
+    return get_points_range(metric_name, 0, 0, 0);
+}
+
+std::vector<MetricPoint> InMemoryStorage::get_points_range(
+    const std::string& metric_name,
+    std::int64_t start_time,
+    std::int64_t end_time,
+    std::size_t limit
+) const {
     auto it = storage_.find(metric_name);
     if (it == storage_.end()) {
         return {};
     }
-    return it->second->get_all();
+    auto samples = it->second->get_range(start_time, end_time, limit);
+    std::vector<MetricPoint> points;
+    points.reserve(samples.size());
+    for (const auto& s : samples) {
+        points.push_back(MetricPoint{metric_name, s.value, s.timestamp});
+    }
+    return points;
 }

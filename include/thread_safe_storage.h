@@ -6,6 +6,8 @@
 #include <optional>
 #include <span>
 #include <cstddef>
+#include <cstdint>
+#include <atomic>
 #include "metric.h"
 #include "storage.h"
 
@@ -37,14 +39,25 @@ public:
     std::optional<double>      get_average(const std::string& metric_name) const;
     std::size_t                metric_count() const;
 
-     // Returns all points for a metric under shared_lock (thread-safe read).
+    // Returns all points for a metric under shared_lock (thread-safe read).
     std::vector<MetricPoint> get_points(const std::string& metric_name) const;
-    
-    bool                       has_metric(const std::string& metric_name) const;
+
+    // Returns points filtered by time range and limit under shared_lock.
+    std::vector<MetricPoint> get_points_range(
+        const std::string& metric_name,
+        std::int64_t start_time = 0,
+        std::int64_t end_time = 0,
+        std::size_t limit = 0
+    ) const;
+
+    bool has_metric(const std::string& metric_name) const;
 
     // Returns a snapshot copy of metric names. The lock is held only during
     // the copy construction, not for the lifetime of the returned vector.
-    std::vector<std::string>   metric_names() const;
+    std::vector<std::string> metric_names() const;
+
+    // Total metric samples ingested since startup (counter for self-monitoring).
+    std::uint64_t total_samples_ingested() const;
 
 private:
     InMemoryStorage storage_;
@@ -53,4 +66,5 @@ private:
     // Logically the mutex is not part of the object's observable state.
     mutable std::shared_mutex mutex_;
     wal::WALWriter* wal_ = nullptr;
+    std::atomic<std::uint64_t> total_samples_ingested_{0};
 };

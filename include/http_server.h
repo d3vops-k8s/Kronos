@@ -30,6 +30,7 @@ private:
     void handle_health(const httplib::Request& req, httplib::Response& res);
     void handle_metrics_list(const httplib::Request& req, httplib::Response& res);
     void handle_query(const httplib::Request& req, httplib::Response& res);
+    void handle_self_metrics(const httplib::Request& req, httplib::Response& res);
 
     ThreadSafeStorage& storage_;
     httplib::Server    server_;

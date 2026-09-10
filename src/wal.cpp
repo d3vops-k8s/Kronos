@@ -2,6 +2,8 @@
 #include "thread_safe_storage.h"
 #include <string>
 #include <iostream>
+#include <format>
+#include <vector>
 
 namespace wal {
 
@@ -11,7 +13,7 @@ bool write_header(std::ostream& out) {
     return out.good();
 }
 
-bool validate_header(std::istream& in) {
+bool validate_header(std::istream& in, std::uint16_t& out_version) {
     std::uint16_t magic   = 0;
     std::uint16_t version = 0;
 
@@ -22,7 +24,17 @@ bool validate_header(std::istream& in) {
         return false;
     }
 
-    return (magic == MAGIC) && (version == VERSION);
+    if (magic != MAGIC) {
+        return false;
+    }
+
+    // Support backwards compatibility: v1 (no CRC) and v2 (CRC32)
+    if (version != 1 && version != 2) {
+        return false;
+    }
+
+    out_version = version;
+    return true;
 }
 
 bool write_record(std::ostream& out, const MetricPoint& point) {
@@ -41,10 +53,23 @@ bool write_record(std::ostream& out, const MetricPoint& point) {
         out.write(point.name.data(), name_len);
     }
 
+    // 5. Compute CRC32 over payload
+    std::uint32_t crc = ~0u;
+    crc = crc32_update(crc, &point.timestamp, sizeof(point.timestamp));
+    crc = crc32_update(crc, &point.value, sizeof(point.value));
+    crc = crc32_update(crc, &name_len, sizeof(name_len));
+    if (name_len > 0) {
+        crc = crc32_update(crc, point.name.data(), name_len);
+    }
+    crc = ~crc;
+
+    // 6. Write CRC32 (uint32_t, 4 bytes)
+    out.write(reinterpret_cast<const char*>(&crc), sizeof(crc));
+
     return out.good();
 }
 
-std::optional<MetricPoint> read_record(std::istream& in) {
+std::optional<MetricPoint> read_record(std::istream& in, std::uint16_t version) {
     MetricPoint point;
 
     // 1. Read timestamp (8 bytes)
@@ -53,7 +78,8 @@ std::optional<MetricPoint> read_record(std::istream& in) {
         return std::nullopt; // Clean End-Of-File
     }
     if (in.gcount() < static_cast<std::streamsize>(sizeof(point.timestamp))) {
-        return std::nullopt; // Corrupted / incomplete record
+        std::cerr << "[WAL] Warning: Incomplete timestamp encountered, truncated log.\n";
+        return std::nullopt;
     }
 
     // 2. Read value (8 bytes)
@@ -74,6 +100,31 @@ std::optional<MetricPoint> read_record(std::istream& in) {
     if (name_len > 0) {
         in.read(point.name.data(), name_len);
         if (!in.good()) {
+            return std::nullopt;
+        }
+    }
+
+    // 5. For Version 2+, verify CRC32
+    if (version >= 2) {
+        std::uint32_t expected_crc = 0;
+        in.read(reinterpret_cast<char*>(&expected_crc), sizeof(expected_crc));
+        if (!in.good()) {
+            std::cerr << "[WAL] Warning: Incomplete record: missing CRC32 checksum.\n";
+            return std::nullopt;
+        }
+
+        std::uint32_t actual_crc = ~0u;
+        actual_crc = crc32_update(actual_crc, &point.timestamp, sizeof(point.timestamp));
+        actual_crc = crc32_update(actual_crc, &point.value, sizeof(point.value));
+        actual_crc = crc32_update(actual_crc, &name_len, sizeof(name_len));
+        if (name_len > 0) {
+            actual_crc = crc32_update(actual_crc, point.name.data(), name_len);
+        }
+        actual_crc = ~actual_crc;
+
+        if (actual_crc != expected_crc) {
+            std::cerr << std::format("[WAL] CRC32 MISMATCH in record for '{}': expected {:#x}, got {:#x}. Corrupted record discarded.\n",
+                point.name, expected_crc, actual_crc);
             return std::nullopt;
         }
     }
@@ -161,15 +212,28 @@ std::size_t WALReader::recover(ThreadSafeStorage& storage) {
         return 0;
     }
 
-    if (!validate_header(file)) {
+    std::uint16_t version = 0;
+    if (!validate_header(file, version)) {
         std::cerr << "[WALReader] Warning: Invalid or missing WAL header in " << path_ << "\n";
         return 0;
     }
 
     std::size_t count = 0;
-    while (auto point = read_record(file)) {
-        storage.insert(*point);
-        ++count;
+    std::vector<MetricPoint> batch;
+    batch.reserve(256);
+
+    while (auto point = read_record(file, version)) {
+        batch.push_back(std::move(*point));
+        if (batch.size() >= 256) {
+            storage.insert_batch(batch);
+            count += batch.size();
+            batch.clear();
+        }
+    }
+
+    if (!batch.empty()) {
+        count += batch.size();
+        storage.insert_batch(batch);
     }
 
     return count;

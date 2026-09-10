@@ -42,6 +42,14 @@ public:
     // Returns all buffered points for the given metric in chronological order.
     std::vector<MetricPoint> get_points(const std::string& metric_name) const;
 
+    // Returns buffered points filtered by time range [start_time, end_time] and optional limit.
+    std::vector<MetricPoint> get_points_range(
+        const std::string& metric_name,
+        std::int64_t start_time = 0,
+        std::int64_t end_time = 0,
+        std::size_t limit = 0
+    ) const;
+
     // Returns true if the metric has been seen at least once.
     bool has_metric(const std::string& metric_name) const;
 
