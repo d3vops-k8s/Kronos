@@ -33,6 +33,8 @@ add_executable(kronos
     src/scraper.cpp
     src/http_server.cpp
     src/wal.cpp
+    src/bit_stream.cpp
+    src/gorilla.cpp
 )
 
 target_include_directories(kronos PRIVATE include)
@@ -47,3 +49,10 @@ add_executable(mock_exporter
 
 target_include_directories(mock_exporter PRIVATE include)
 target_link_libraries(mock_exporter PRIVATE httplib::httplib)
+
+add_executable(benchmark_gorilla
+    tests/benchmark_gorilla.cpp
+    src/bit_stream.cpp
+    src/gorilla.cpp
+)
+target_include_directories(benchmark_gorilla PRIVATE include)
