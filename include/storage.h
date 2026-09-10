@@ -35,6 +35,9 @@ public:
     // Returns the average value across all buffered points for the given metric.
     std::optional<double> get_average(const std::string& metric_name) const;
 
+    // Returns all buffered points for the given metric in chronological order.
+    std::vector<MetricPoint> get_points(const std::string& metric_name) const;
+
     // Returns true if the metric has been seen at least once.
     bool has_metric(const std::string& metric_name) const;
 
